@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@preview/core": ["packages/preview-core/src/index.ts"],
+      "@preview/core/*": ["packages/preview-core/src/*"],
+      "@preview/renderers": ["packages/preview-renderers/src/index.ts"],
+      "@preview/renderers/*": ["packages/preview-renderers/src/*"],
+      "@app/*": ["src/*"]
+    }
+  },
+  "include": [
+    "src",
+    "server",
+    "packages",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

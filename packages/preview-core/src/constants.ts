@@ -1,0 +1,8 @@
+export const SAMPLE_BYTES = 64 * 1024;
+export const TEXT_CHUNK_BYTES = 256 * 1024;
+export const HEX_CHUNK_BYTES = 256 * 1024;
+export const INCREMENTAL_LOAD_THRESHOLD_PX = 1200;
+export const TEXT_ROW_HEIGHT = 24;
+export const PRESENTATION_WIDTH = 960;
+export const PRESENTATION_HEIGHT = 540;
+export const DEFAULT_PROXY_BASE = '/api/file';
