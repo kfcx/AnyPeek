@@ -18,7 +18,7 @@ AnyPeek 目前就三种部署方式：
 
 想先试试看，或者准备改代码，本地搭起来最快。
 
-先装好 Node.js 20 和 pnpm，然后在项目目录执行：
+先装好 Node.js 20+ 和 pnpm 10，然后在项目目录执行：
 
 ```bash
 pnpm install --frozen-lockfile

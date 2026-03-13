@@ -9,7 +9,7 @@
 [Use this template](https://github.com/kfcx/AnyPeek/generate)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kfcx/AnyPeek)
-[![Deploy on Deno](https://deno.com/button)](https://console.deno.com/new?clone=https://github.com/kfcx/AnyPeek&install=npx%20pnpm%20install%20--frozen-lockfile&build=npx%20pnpm%20run%20build)
+[![Deploy on Deno](https://deno.com/button)](https://console.deno.com/new?clone=https://github.com/kfcx/AnyPeek&install=npx%20pnpm%4010.32.1%20install%20--frozen-lockfile&build=npx%20pnpm%4010.32.1%20run%20build)
 
 ## 为什么会做这个
 

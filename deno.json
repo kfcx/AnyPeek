@@ -9,8 +9,8 @@
     "hono/": "npm:hono@^4.12.7/"
   },
   "deploy": {
-    "install": "npx pnpm install --frozen-lockfile",
-    "build": "npx pnpm run build",
+    "install": "npx pnpm@10.32.1 install --frozen-lockfile",
+    "build": "npx pnpm@10.32.1 run build",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "./deno.server.ts"
