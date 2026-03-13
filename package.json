@@ -8,12 +8,12 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "clean": "node -e \"const fs=require('node:fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.rmSync('.wrangler/deploy', { recursive: true, force: true });\"",
+    "clean": "node ./scripts/clean.mjs",
     "dev": "vite",
     "dev:web": "vite",
     "dev:cf": "wrangler dev --config wrangler.jsonc",
     "dev:proxy": "tsx server/index.ts",
-    "build": "node -e \"const fs=require('node:fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.rmSync('.wrangler/deploy', { recursive: true, force: true });\" && tsc -p tsconfig.cloudflare.json --noEmit && tsc --noEmit && vite build",
+    "build": "node ./scripts/clean.mjs && tsc -p tsconfig.cloudflare.json --noEmit && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

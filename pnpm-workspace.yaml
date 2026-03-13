@@ -1,6 +1,5 @@
-useNodeVersion: 22.22.1
 allowBuilds:
-  core-js: true
+  core-js: false
   esbuild: true
   sharp: true
   workerd: true
