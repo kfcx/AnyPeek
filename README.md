@@ -9,6 +9,7 @@
 [Use this template](https://github.com/kfcx/AnyPeek/generate)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kfcx/AnyPeek)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/kfcx/AnyPeek)
 [![Deploy on Deno](https://deno.com/button)](https://console.deno.com/new?clone=https://github.com/kfcx/AnyPeek&install=npx%20pnpm%4010.32.1%20install%20--frozen-lockfile&build=npx%20pnpm%4010.32.1%20run%20build)
 
 ## 为什么会做这个
@@ -54,7 +55,7 @@ AnyPeek 不是一上来就把整份大文件塞进浏览器。
 
 ## 文档
 
-- [部署指南](./docs/DEPLOYMENT.md)：本地、Deno、Cloudflare Workers 三种方案
+- [部署指南](./docs/DEPLOYMENT.md)：本地、Vercel、Deno、Cloudflare Workers 四种方案
 - [技术细节](./docs/TECHNICAL_DETAILS.md)：痛点、主链路、内容识别和大文件处理方式
 - [维护手册](./docs/MAINTAINERS.md)：仓库维护、自动部署、发版前检查
 - [贡献说明](./docs/CONTRIBUTING.md)：怎么提一个有效改动，改完后看哪些检查

@@ -45,7 +45,7 @@ AnyPeek 不只看文件后缀。
 
 ### 同一套行为，跑在不同运行时
 
-本地开发、Cloudflare Workers 和 Deno 复用的是同一套代理路由和远程读取逻辑。
+本地开发、Vercel、Cloudflare Workers 和 Deno 复用的是同一套代理路由和远程读取逻辑。
 
 ## 一次远程预览是怎么走的
 
@@ -189,7 +189,7 @@ AnyPeek 不只看文件后缀。
 
 ### `server/`
 
-共享代理逻辑放在这里，本地 Node、Cloudflare Workers、Deno 都围着这层复用。
+共享代理逻辑放在这里，本地 Node、Vercel、Cloudflare Workers、Deno 都围着这层复用。
 
 ### `worker/index.ts`
 

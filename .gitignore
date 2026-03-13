@@ -2,6 +2,7 @@ node_modules/
 dist/
 src-tauri/
 .wrangler/
+.vercel/
 .idea/
 .dev.vars
 .dev.vars.*

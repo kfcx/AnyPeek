@@ -1,8 +1,9 @@
 # 部署指南
 
-AnyPeek 目前就三种部署方式：
+AnyPeek 目前有四种部署方式：
 
 - 在本地跑起来，自己直接用
+- 部署到 Vercel，直接对外访问
 - 部署到 Deno，直接对外访问
 - 部署到 Cloudflare Workers，直接对外访问
 
@@ -11,6 +12,7 @@ AnyPeek 目前就三种部署方式：
 ## 怎么选
 
 - 本地搭建：适合先试用、改代码，或者只打算自己用
+- Vercel：适合想用最常见的 Git 导入式部署，把静态页面和代理接口一起托管
 - Deno：适合想尽快上线，少折腾配置
 - Cloudflare Workers：适合本来就在用 Cloudflare，或者准备把域名、访问控制和部署都放到 Cloudflare 里
 
@@ -51,6 +53,24 @@ pnpm run deploy:deno
 ```
 
 适合你已经有 Deno Deploy 项目，或者想自己掌控发布过程的时候用。
+
+## 部署到 Vercel
+
+### 一键部署
+
+1. 点击 README 里的 `Deploy with Vercel`
+2. 登录并导入仓库
+3. 保持仓库里的默认构建配置
+4. 完成后直接访问分配到的域名
+
+### 手动发布
+
+```bash
+pnpm install --frozen-lockfile
+npx vercel --prod
+```
+
+适合你已经装好 Vercel CLI，或者想把发布流程接进自己已有账号里的时候用。
 
 ## 部署到 Cloudflare Workers
 

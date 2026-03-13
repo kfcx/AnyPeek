@@ -42,7 +42,7 @@
 
 - 只改文档：自己通读一遍，确认链接和表述没问题
 - 改前端交互或预览逻辑：至少跑 `pnpm test` 和 `pnpm run build`
-- 改 Cloudflare / Deno / 代理相关逻辑：再补上 `pnpm run check:cf` 和 `pnpm run check:deno`
+- 改 Cloudflare / Deno / Vercel / 代理相关逻辑：再补上 `pnpm run check:cf` 和 `pnpm run check:deno`
 
 常用命令放这里：
 
@@ -58,7 +58,7 @@ pnpm run build
 如果改动影响到文档，按这个边界更新就够了：
 
 - `README.md`：项目介绍、场景、部署入口
-- `docs/DEPLOYMENT.md`：本地、Deno、Cloudflare Workers 的部署方式
+- `docs/DEPLOYMENT.md`：本地、Vercel、Deno、Cloudflare Workers 的部署方式
 - `docs/TECHNICAL_DETAILS.md`：实现思路、主链路、大文件策略
 - `docs/MAINTAINERS.md`：仓库维护、工作流、发版相关内容
 
