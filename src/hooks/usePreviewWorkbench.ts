@@ -11,15 +11,74 @@ import {
   type RemoteTransport
 } from '@preview/core';
 
-function buildRemoteDownloadTarget(rawUrl: string, transport: RemoteTransport, fileName?: string): DownloadTarget | null {
+import { downloadBytes } from '../platform/download';
+import { createTauriRemotePreviewResource, downloadTauriRemoteUrl, isTauriRuntime } from '../platform/tauri';
+
+function readPreviewErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    const message = Reflect.get(error, 'message');
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+
+  return fallback;
+}
+
+function buildRemoteDownloadTarget(
+  rawUrl: string,
+  transport: RemoteTransport,
+  tauriRuntime: boolean,
+  fileName?: string
+): DownloadTarget | null {
   if (!isHttpUrl(rawUrl)) {
     return null;
+  }
+
+  if (tauriRuntime) {
+    return {
+      fileName,
+      label: '下载当前 URL 的原文件',
+      async action() {
+        const remoteFile = await downloadTauriRemoteUrl(rawUrl.trim());
+        downloadBytes(remoteFile.bytes, remoteFile.fileName, remoteFile.contentType);
+      }
+    };
   }
 
   return {
     href: transport.buildDownloadUrl(rawUrl.trim()),
     fileName,
     label: '下载当前 URL 的原文件'
+  };
+}
+
+function buildResourceDownloadTarget(resource: ResolvedPreviewResource): DownloadTarget {
+  const label = resource.source === 'remote' ? '下载当前 URL 的原文件' : '下载当前本地原文件';
+
+  if (resource.downloadUrl) {
+    return {
+      href: resource.downloadUrl,
+      fileName: resource.fileName,
+      label
+    };
+  }
+
+  return {
+    fileName: resource.fileName,
+    label,
+    async action() {
+      const bytes = await resource.handle.readAll();
+      downloadBytes(bytes, resource.fileName, resource.contentType);
+    }
   };
 }
 
@@ -36,6 +95,7 @@ export interface PreviewWorkbenchState {
 }
 
 export function usePreviewWorkbench(): PreviewWorkbenchState {
+  const tauriRuntime = useMemo(() => isTauriRuntime(), []);
   const transport = useMemo(
     () => createProxyRemoteTransport(import.meta.env.VITE_REMOTE_PROXY_BASE || DEFAULT_PROXY_BASE),
     []
@@ -86,7 +146,9 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
       replaceResource(null);
 
       try {
-        const nextResource = await createRemotePreviewResource(nextUrl, transport);
+        const nextResource = tauriRuntime
+          ? await createTauriRemotePreviewResource(nextUrl)
+          : await createRemotePreviewResource(nextUrl, transport);
         if (requestId !== requestIdRef.current) {
           nextResource.handle.dispose?.();
           return;
@@ -97,7 +159,7 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
         replaceResource(nextResource);
       } catch (previewError) {
         if (requestId === requestIdRef.current) {
-          setError(previewError instanceof Error ? previewError.message : '远程预览失败。');
+          setError(readPreviewErrorMessage(previewError, '远程预览失败。'));
         }
       } finally {
         if (requestId === requestIdRef.current) {
@@ -105,7 +167,7 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
         }
       }
     },
-    [replaceResource, setInputValue, transport, updateUrlQuery]
+    [replaceResource, setInputValue, tauriRuntime, transport, updateUrlQuery]
   );
 
   const previewLocal = useCallback(
@@ -127,7 +189,7 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
         replaceResource(nextResource);
       } catch (previewError) {
         if (requestId === requestIdRef.current) {
-          setError(previewError instanceof Error ? previewError.message : '本地文件预览失败。');
+          setError(readPreviewErrorMessage(previewError, '本地文件预览失败。'));
         }
       } finally {
         if (requestId === requestIdRef.current) {
@@ -159,15 +221,11 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
 
   const downloadTarget = useMemo(() => {
     if (resource && inputValueState.trim() === resource.inputValue.trim()) {
-      return {
-        href: resource.downloadUrl,
-        fileName: resource.fileName,
-        label: resource.source === 'remote' ? '下载当前 URL 的原文件' : '下载当前本地原文件'
-      } satisfies DownloadTarget;
+      return buildResourceDownloadTarget(resource);
     }
 
-    return buildRemoteDownloadTarget(inputValueState, transport);
-  }, [inputValueState, resource, transport]);
+    return buildRemoteDownloadTarget(inputValueState, transport, tauriRuntime);
+  }, [inputValueState, resource, tauriRuntime, transport]);
 
   return {
     inputValue: inputValueState,

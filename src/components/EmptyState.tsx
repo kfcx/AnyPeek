@@ -1,4 +1,5 @@
 import { GitHubIcon } from './AppIcons';
+import { appIconPngUrl } from '@app/branding';
 
 const REPO_URL = 'https://github.com/kfcx/AnyPeek';
 const PREVIEW_TYPES = ['文本', 'Word', 'Excel', 'PPT', '图片', '更多文件'] as const;
@@ -8,7 +9,12 @@ export function EmptyState() {
     <section className="empty-state">
       <div className="empty-state-card">
         <div className="empty-state-head">
-          <strong>AnyPeek</strong>
+          <div className="empty-state-brand">
+            <div className="empty-state-logo-frame" aria-hidden="true">
+              <img className="empty-state-logo" src={appIconPngUrl} alt="" />
+            </div>
+            <strong>AnyPeek</strong>
+          </div>
           <a
             className="empty-state-github"
             href={REPO_URL}

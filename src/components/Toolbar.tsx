@@ -34,6 +34,7 @@ export function Toolbar({
   onPickLocalFile
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const canDownload = Boolean(downloadTarget?.href || downloadTarget?.action);
 
   return (
     <header className="toolbar panel" aria-hidden={!visible}>
@@ -74,16 +75,28 @@ export function Toolbar({
           >
             <LocalFileIcon className="toolbar-icon" />
           </button>
-          {downloadTarget ? (
-            <a
-              className="toolbar-action-button secondary"
-              href={downloadTarget.href}
-              download={downloadTarget.fileName}
-              aria-label={downloadTarget.label}
-              title={downloadTarget.label}
-            >
-              <DownloadIcon className="toolbar-icon" />
-            </a>
+          {canDownload ? (
+            downloadTarget?.action ? (
+              <button
+                type="button"
+                className="toolbar-action-button secondary"
+                onClick={() => void downloadTarget.action?.()}
+                aria-label={downloadTarget.label}
+                title={downloadTarget.label}
+              >
+                <DownloadIcon className="toolbar-icon" />
+              </button>
+            ) : (
+              <a
+                className="toolbar-action-button secondary"
+                href={downloadTarget?.href}
+                download={downloadTarget?.fileName}
+                aria-label={downloadTarget?.label}
+                title={downloadTarget?.label}
+              >
+                <DownloadIcon className="toolbar-icon" />
+              </a>
+            )
           ) : null}
           <button
             type="button"

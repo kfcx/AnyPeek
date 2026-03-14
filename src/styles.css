@@ -12,6 +12,9 @@
   --teal-soft: rgba(15, 124, 130, 0.1);
   --shadow: 0 28px 70px rgba(31, 39, 51, 0.12);
   --radius: 28px;
+  --shell-gutter-x: 0px;
+  --shell-gutter-y: 0px;
+  --workspace-inset: 14px;
 }
 
 * {
@@ -22,6 +25,7 @@ html,
 body,
 #root {
   height: 100%;
+  overflow: hidden;
 }
 
 html {
@@ -64,14 +68,17 @@ a {
 
 .app-shell {
   position: relative;
+  height: 100%;
   min-height: 100%;
+  padding: var(--shell-gutter-y) var(--shell-gutter-x);
 }
 
 .shell-layout {
   position: relative;
-  width: min(1520px, calc(100% - 32px));
-  height: calc(100dvh - 24px);
-  margin: 12px auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
 }
 
 .panel {
@@ -273,13 +280,20 @@ a {
 
 .workspace {
   position: relative;
-  min-height: 100%;
+  min-height: 0;
   height: 100%;
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
-  padding: 14px;
+  padding: var(--workspace-inset);
+}
+
+.workspace.panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: linear-gradient(180deg, rgba(255, 251, 244, 0.9), rgba(255, 249, 242, 0.84));
 }
 
 .workspace.is-empty-only {
@@ -289,7 +303,7 @@ a {
 .workspace::after {
   content: '';
   position: absolute;
-  inset: 14px;
+  inset: var(--workspace-inset);
   border-radius: 24px;
   border: 1.5px dashed transparent;
   transition:
@@ -305,7 +319,7 @@ a {
 
 .drop-overlay {
   position: absolute;
-  inset: 14px;
+  inset: var(--workspace-inset);
   z-index: 5;
   display: grid;
   place-items: center;
@@ -409,7 +423,7 @@ a {
 .empty-state::after {
   content: '';
   grid-area: 1 / 1;
-  width: min(36vw, 300px);
+  width: min(42vw, 340px);
   aspect-ratio: 1;
   border-radius: 32px;
   border: 1px solid rgba(188, 95, 58, 0.18);
@@ -429,27 +443,62 @@ a {
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 22px;
-  width: min(36vw, 300px);
+  gap: 24px;
+  width: min(42vw, 340px);
   aspect-ratio: 1;
-  padding: 24px;
+  padding: 28px 28px 26px;
   text-align: center;
 }
 
 .empty-state-head {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
-  align-items: center;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
   width: 100%;
 }
 
-.empty-state-head strong {
+.empty-state-brand {
+  display: grid;
   grid-column: 2;
-  justify-self: center;
+  justify-items: center;
+  gap: 12px;
+  max-width: min(100%, 240px);
+}
+
+.empty-state-logo-frame {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  aspect-ratio: 1;
+  padding: 6px;
+  border-radius: 24px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(250, 242, 232, 0.86)),
+    radial-gradient(circle at 35% 35%, rgba(188, 95, 58, 0.12), transparent 0 65%);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 18px 36px rgba(31, 39, 51, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.empty-state-logo {
+  width: 122%;
+  height: 122%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  display: block;
+  transform: translateY(-1px);
+  filter: drop-shadow(0 10px 20px rgba(31, 39, 51, 0.1));
+}
+
+.empty-state-brand strong {
   color: var(--ink);
   font-size: clamp(28px, 4vw, 36px);
   line-height: 1;
   letter-spacing: -0.03em;
+  text-align: center;
 }
 
 .empty-state-copy {
@@ -467,6 +516,7 @@ a {
   height: 40px;
   grid-column: 3;
   justify-self: end;
+  align-self: start;
   flex: none;
   border-radius: 14px;
   border: 1px solid rgba(31, 39, 51, 0.1);
@@ -826,9 +876,7 @@ a {
 
 @media (max-width: 760px) {
   .shell-layout {
-    width: calc(100% - 16px);
-    height: calc(100dvh - 16px);
-    margin: 8px auto;
+    width: 100%;
   }
 
   .toolbar {
@@ -837,16 +885,30 @@ a {
   }
 
   .workspace {
-    padding: 12px;
+    --workspace-inset: 12px;
   }
 
   .empty-state-card {
-    width: min(72vw, 300px);
-    padding: 22px 20px;
+    width: min(80vw, 320px);
+    padding: 24px 22px 22px;
   }
 
   .empty-state::after {
-    width: min(72vw, 300px);
+    width: min(80vw, 320px);
+  }
+
+  .empty-state-brand {
+    gap: 12px;
+    max-width: min(100%, 208px);
+  }
+
+  .empty-state-logo-frame {
+    width: 68px;
+    border-radius: 20px;
+  }
+
+  .empty-state-brand strong {
+    font-size: clamp(24px, 8vw, 32px);
   }
 
   .global-error,

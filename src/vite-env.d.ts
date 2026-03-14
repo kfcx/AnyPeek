@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+export {};
+
 declare module '@js-preview/docx' {
   export interface JsPreviewDocxInstance {
     preview(source: string | Blob | ArrayBuffer | Uint8Array): Promise<unknown> | unknown;

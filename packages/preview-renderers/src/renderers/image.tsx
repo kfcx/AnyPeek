@@ -7,6 +7,7 @@ import 'yet-another-react-lightbox/styles.css';
 
 import { ErrorCard, LoadingCard } from '../common';
 import type { RendererProps } from '../types';
+import { usePreviewObjectUrl } from '../use-preview-object-url';
 
 interface ImageState {
   loading: boolean;
@@ -16,6 +17,7 @@ interface ImageState {
 }
 
 export function ImageRenderer({ resource }: RendererProps) {
+  const { previewUrl, loading: loadingBlob, error: blobError } = usePreviewObjectUrl(resource);
   const [state, setState] = useState<ImageState>({
     loading: true,
     width: 1,
@@ -24,6 +26,10 @@ export function ImageRenderer({ resource }: RendererProps) {
   });
 
   useEffect(() => {
+    if (!previewUrl) {
+      return;
+    }
+
     let active = true;
     const image = new Image();
     image.referrerPolicy = 'no-referrer';
@@ -61,33 +67,33 @@ export function ImageRenderer({ resource }: RendererProps) {
       });
     };
 
-    image.src = resource.previewUrl;
+    image.src = previewUrl;
 
     return () => {
       active = false;
       image.onload = null;
       image.onerror = null;
     };
-  }, [resource.id, resource.previewUrl]);
+  }, [previewUrl, resource.id]);
 
   const slides = useMemo(
     () => [
-      {
-        src: resource.previewUrl,
-        alt: resource.fileName,
-        width: state.width,
-        height: state.height
-      }
-    ],
-    [resource.fileName, resource.previewUrl, state.height, state.width]
+        {
+          src: previewUrl,
+          alt: resource.fileName,
+          width: state.width,
+          height: state.height
+        }
+      ],
+    [previewUrl, resource.fileName, state.height, state.width]
   );
 
-  if (state.loading) {
+  if (loadingBlob || state.loading) {
     return <LoadingCard>正在读取图片尺寸并初始化交互式预览器。</LoadingCard>;
   }
 
-  if (state.error) {
-    return <ErrorCard message={state.error} />;
+  if (blobError || state.error || !previewUrl) {
+    return <ErrorCard message={blobError || state.error || '图片加载失败。'} />;
   }
 
   return (

@@ -48,7 +48,8 @@ export interface ResolvedPreviewResource {
 }
 
 export interface DownloadTarget {
-  href: string;
+  href?: string;
   fileName?: string;
   label: string;
+  action?: () => Promise<void> | void;
 }

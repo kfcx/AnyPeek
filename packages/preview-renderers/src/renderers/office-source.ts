@@ -1,7 +1,7 @@
 import { toArrayBuffer, type ResolvedPreviewResource } from '@preview/core';
 
 export async function resolveOfficePreviewSource(resource: ResolvedPreviewResource): Promise<string | ArrayBuffer> {
-  if (resource.source !== 'local') {
+  if (resource.source !== 'local' && resource.previewUrl) {
     return resource.previewUrl;
   }
 

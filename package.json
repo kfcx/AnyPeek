@@ -30,6 +30,7 @@
     "@js-preview/docx": "^1.6.4",
     "@js-preview/excel": "^1.7.14",
     "@tanstack/react-virtual": "^3.13.21",
+    "@tauri-apps/api": "^2.10.1",
     "core-js": "^3.48.0",
     "hono": "^4.12.7",
     "pptx-preview": "^1.0.6",
