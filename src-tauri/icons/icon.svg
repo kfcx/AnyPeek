@@ -1,12 +1,1 @@
-<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <clipPath id="peek-clip">
-    <rect x="16" y="16" width="48" height="48" rx="14"/>
-  </clipPath>
-  <rect x="16" y="16" width="48" height="48" rx="14" fill="#FAF9F6"/>
-  <g clip-path="url(#peek-clip)">
-    <path d="M 0 80 L 80 0 L 80 80 Z" fill="#B45309"/>
-  </g>
-  <rect x="16" y="16" width="48" height="48" rx="14" fill="none" stroke="#292524" stroke-width="3.5"/>
-  <line x1="12" y1="68" x2="68" y2="12" stroke="#292524" stroke-width="3.5" stroke-linecap="round"/>
-  <circle cx="52" cy="52" r="5" fill="#FFFFFF"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" fill="none" viewBox="0 0 80 80"><clipPath id="peek-clip"><rect width="48" height="48" x="16" y="16" rx="14"/></clipPath><rect width="48" height="48" x="16" y="16" fill="#FAF9F6" rx="14"/><g clip-path="url(#peek-clip)"><path fill="#B45309" d="M 0 80 L 80 0 L 80 80 Z"/></g><rect width="48" height="48" x="16" y="16" fill="none" stroke="#292524" stroke-width="3.5" rx="14"/><line x1="12" x2="68" y1="68" y2="12" stroke="#292524" stroke-linecap="round" stroke-width="3.5"/><circle cx="52" cy="52" r="5" fill="#FFF"/></svg>
