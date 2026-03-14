@@ -1,215 +1,269 @@
 # 技术细节
 
-## 它真正要解决的问题
+这页不打算把每一行代码都解释一遍，而是先帮你抓住 AnyPeek 的主线：
 
-AnyPeek 想解决的，不是某一个格式的预览，而是“先看一眼内容”这件事。
+> **把一个 URL 或本地文件，尽快整理成“可以读”的内容。**
 
-常见场景基本都是这些：
+如果你先抓住这条主线，再回头看代码，整个仓库会顺很多。
 
-- 手里有个文档，但本机没有对应软件
-- 收到一个陌生链接，想先确认里面到底是什么
-- 点开就会下载的地址，只想看内容，不想先落盘
-- 面对大日志、大文本、大导出文件，不想因为一次性加载把页面拖慢
+## 先看懂主链路
 
-所以 AnyPeek 的核心不是做一个“文档播放器”，而是把 `URL / 本地文件 -> 可读内容` 这条路径统一起来。
+AnyPeek 的核心流程可以压缩成这一条：
 
-## 设计原则
+```text
+URL / 本地文件
+  -> 统一抽象成 Preview Resource
+  -> 读取一小段样本
+  -> 结合响应头、扩展名、文件头判断类型
+  -> 选中对应渲染器
+  -> 按合适的方式显示内容
+```
 
-### 一个入口，两个来源
+真正重要的，不是“支持了多少格式”，而是这条路径尽量统一。
 
-无论输入的是 URL 还是本地文件，最后都会被整理成同一种 `ResolvedPreviewResource`。
+## 为什么它不是“按后缀硬猜格式”
 
-这意味着后面的渲染器不需要关心内容来自哪里，只需要关心两件事：
+只看文件后缀的问题很明显：
 
-- 这个资源现在被识别成什么类型
-- 应该按什么方式去读取和显示
+- 很多链接根本没有像样的文件名
+- 远端可能给出不可靠或过于笼统的 `Content-Type`
+- 有些文本、播放列表、日志、配置文件甚至根本没有扩展名
 
-### 先识别内容，再决定怎么显示
-
-AnyPeek 不只看文件后缀。
-
-它会先拿到一小段样本字节，再结合这些信息一起判断：
+所以 AnyPeek 会同时参考几种线索：
 
 - `Content-Type`
 - 文件名和扩展名
-- 常见二进制格式的魔数
-- 样本内容本身更像文本还是二进制
+- 文件头魔数
+- 样本内容看起来更像文本还是二进制
 
-判断出来之后，再从渲染器注册表里选择真正要用的预览器。
+这个逻辑主要在：
 
-### 能切片就不整包
+- `packages/preview-core/src/detect.ts`
+- `packages/preview-core/src/collections.ts`
 
-如果目标只是“先看内容”，没必要一上来就把整份大文件完整读进浏览器。
+## 两类输入，最后为什么能走成同一套体验
 
-文本和 Hex 视图会优先走切片读取，页面滚动到哪里，再继续往后读哪里。这样处理大文件时，压力不会随着文件体积直接线性放大。
+从用户视角看，AnyPeek 有两种入口：
 
-### 同一套行为，跑在不同运行时
+- 输入远程 URL
+- 打开本地文件
 
-本地开发、Vercel、Cloudflare Workers 和 Deno 复用的是同一套代理路由和远程读取逻辑。
+但往后走，它们都会被整理成 `ResolvedPreviewResource`。这一步的意义很大：
 
-## 一次远程预览是怎么走的
+- 渲染器不用关心内容来自本地还是远程
+- 后续统一只需要关心“这是什么类型”以及“怎么读”
+- 下载、元信息展示、预览器选择都能复用
 
-远程 URL 预览的主链路大致如下：
+相关代码主要在：
 
-1. 前端在 `src/hooks/usePreviewWorkbench.ts` 接收 URL 输入
-2. `createProxyRemoteTransport()` 把远程请求统一转成 `/api/file?url=...`
-3. `server/app.ts` 注册 `/api/file` 路由，并把请求交给代理层
-4. `server/remote-proxy.ts` 校验目标地址、处理重定向、转发必要请求头
-5. 客户端先读取一段样本字节，用来判断内容类型
-6. `packages/preview-renderers/src/registry.tsx` 挑选对应渲染器
-7. 渲染器再决定自己该走整包读取、浏览器原生预览，还是分块加载
+- `packages/preview-core/src/resource.ts`
+- `packages/preview-core/src/types.ts`
+- `src/hooks/usePreviewWorkbench.ts`
 
-这条链路也顺手解决了“只想看，不想先下载”的场景：
+## 远程预览为什么要走代理层
 
-- 预览走 `/api/file?url=...`
-- 真要保存原文件时，再走带 `download=1` 的下载地址
+如果只是本地文件，浏览器自己就能读；远程 URL 就没这么简单了。
 
-## 代理层除了转发，还做了什么
+AnyPeek 的 Web 版会把远程预览统一转成：
 
-`/api/file` 不是一个单纯的“代请求”接口，它还承担了几件关键的事情：
+```text
+/api/file?url=...
+```
+
+这样做主要是为了解决四件事：
+
+1. **把远程资源整理成浏览器可稳定消费的读取接口**
+2. **允许前端按需发 `Range` 请求**
+3. **把“预览”和“下载原文件”这两个动作分开**
+4. **在服务端做安全校验，避免把公共部署变成 SSRF 工具**
+
+这层逻辑主要在：
+
+- `server/app.ts`
+- `server/remote-proxy.ts`
+- `packages/preview-core/src/transport.ts`
+
+## 代理层具体做了什么
+
+`/api/file` 不只是“帮前端代请求”，它还顺手承担了这些事情：
 
 - 只允许 `http` 和 `https`
-- 禁止 URL 里携带账号密码
+- 拦截 URL 中携带账号密码的情况
 - 拦截 `localhost`、`.local` 和内网 IP
-- 遇到重定向时，继续重新校验目标地址
-- 透传 `Range`、缓存校验头等和读取相关的请求头
-- 清理不适合继续向前端透出的响应头
-- 通过 CORS 暴露 `Content-Range`、`Content-Length`、`Accept-Ranges` 这些读取大文件时真正有用的信息
+- 重定向时继续重复校验目标地址
+- 透传 `Range`、缓存校验头等真正和读取有关的请求头
+- 去掉不适合继续透给前端的响应头，例如 `set-cookie`
+- 暴露 `Content-Range`、`Content-Length`、`Accept-Ranges` 等前端读取大文件要用的信息
 
-对 AnyPeek 来说，这一层的意义不是“把远程文件搬回来”，而是把远程资源整理成前端能稳定消费的读取接口。
+你可以把它理解成：**把一个不确定、可能危险的远程资源，整理成前端可控的只读入口。**
 
-## 内容识别是怎么做的
+## 内容识别大致怎么判
 
-内容识别的入口在 `packages/preview-core/src/detect.ts`。
+格式识别不是一步到位“拍脑袋猜”，而是分层决策：
 
-它的思路不是押宝某一个信号，而是多条线索一起看：
+### 第一步：先读样本
 
-- 如果样本里能识别出 PDF、PNG、JPEG、ZIP、CFB 这类固定特征，就优先用魔数判断
-- 如果响应头和扩展名已经足够明确，就直接走对应类型
-- 如果既不明确，也没有可用魔数，就进一步判断内容整体更像文本还是二进制
+默认先读取 `64 KB` 样本，而不是整包加载。
 
-这也是为什么像 `.m3u8`、日志、配置文件、无扩展名文本这类内容，经常也能直接落进文本视图，而不需要提前把规则写死。
+这样格式识别不需要提前付出整份文件的成本。
 
-## 大文件为什么能先看，再决定下一步
+### 第二步：先看有没有明显特征
 
-大文件能力主要靠三件事叠在一起：
+如果样本里能认出这些标志，就直接用：
 
-### 样本读取
+- PDF 文件头
+- 图片常见魔数
+- 音视频的明显特征
+- ZIP 容器
+- CFB（旧版 Office 二进制容器）
 
-- 先只读取 `64 KB` 样本做类型判断
-- 不为“识别格式”付出整包加载的代价
+### 第三步：再结合扩展名和内容类型
 
-### 分块读取
+例如：
 
-- 文本视图按 `256 KB` 一块往后读
-- Hex 视图按 `256 KB` 一块往后读
-- 远程资源优先通过 `Range` 请求读取切片
-- 如果远端不支持 `206 Partial Content`，再回退到整包读取
+- `docx` / `pptx` / `xlsx` 这类实际上都是 ZIP 容器
+- `doc` / `ppt` 这类旧格式更像 CFB 容器
+- `csv` / `tsv` 即便不是漂亮的“文档格式”，仍然应该按文本处理
 
-### 虚拟滚动
+### 第四步：还分不清，就判断更像文本还是二进制
 
-- 文本和 Hex 视图都使用虚拟列表
-- DOM 里只保留当前视口附近的行
-- 文件很长时，滚动成本不会和总行数一起爆掉
+如果既没有可靠魔数，也没有靠谱扩展名，就看样本本身更像哪一类：
 
-这套策略最受益的内容类型是：
+- 像文本：进文本视图
+- 像二进制：进 Hex 视图
 
-- 日志
-- 纯文本
-- JSON
-- CSV / TSV
-- 播放列表
-- 未知二进制内容的 Hex 检查
+这也是为什么没有扩展名的日志、配置文件、播放列表，经常也能被直接读出来。
 
-换句话说，AnyPeek 对“大文件”的优势，并不是所有格式都做到了同一种程度的流式预览，而是把最容易拖垮页面的文本和二进制检查路径先优化到位。
+## 渲染器怎么选
 
-## 各类内容现在分别走哪条预览路径
+AnyPeek 的渲染器注册表在：
 
-### 图片、音频、视频、PDF
+```text
+packages/preview-renderers/src/registry.tsx
+```
 
-这几类内容优先交给浏览器本身去处理：
+大致分成这几条路径：
 
-- 图片走图片组件和交互式查看器
-- 音视频走原生媒体元素
-- PDF 走 iframe 预览
+### 浏览器原生更合适的内容
 
-这条路径简单、直接，也最符合“先打开看看”的目标。
+- 图片
+- 音频
+- 视频
+- PDF
 
-### 文本、JSON、代码片段
+这几类内容直接交给浏览器或浏览器友好的组件处理，路径最短，也最符合“先看一眼”的目标。
 
-这类内容走 `TextRenderer`：
-
-- 自动推断编码
-- 分块解码
-- 增量追加
-- 虚拟列表显示
-
-### 未知二进制内容
-
-如果无法识别成更具体的格式，就回退到 `HexRenderer`。
-
-这是 AnyPeek 的最后一层兜底：哪怕打不开成“漂亮的预览”，至少还能先看结构和原始字节。
-
-### DOCX、XLSX、PPTX
-
-这几类内容走浏览器侧专用预览库：
+### 浏览器侧专用预览库
 
 - DOCX：`@js-preview/docx`
-- XLSX / ODS：`@js-preview/excel`
-- PPTX：`pptx-preview`
+- 表格：`@js-preview/excel`
+- 演示文稿：`pptx-preview`
 
-它们解决的是“网页里直接看 Office 内容”这件事，但和文本 / Hex 不完全是同一种大文件策略。
+这几类内容的重点是“网页里能直接看”，不一定和文本/Hex 共用同一套大文件策略。
 
-当前的大文件优化重点，主要还是文本和 Hex 这两条链路。
+### 文本类内容
 
-### 旧版 Office 二进制格式
+文本、JSON、CSV、代码片段等，走 `TextRenderer`：
 
-像 `doc`、`ppt` 这类旧格式，当前 Web 侧不继续硬解析。
+- 增量读取
+- 分块解码
+- 逐步追加
+- 虚拟滚动显示
 
-现在的处理方式是保留下载能力，并为后续桌面侧 native fallback 预留位置。
+### 未知二进制
 
-## 运行时怎么分工
+进 `HexRenderer`。
 
-### `src/`
+这相当于最后一道兜底：即便没有漂亮预览，至少还能先看原始字节和结构。
 
-页面壳层、工具栏、元信息展示和交互状态都在这里。
+### 旧版 Office
 
-### `packages/preview-core`
+像 `doc`、`ppt` 这类旧版二进制 Office 格式，当前 Web 侧不继续硬解析。
 
-这里放“预览无关 UI、但和预览机制强相关”的基础能力：
+现在的策略是：
 
-- 内容识别
-- 字节读取
-- 资源抽象
-- 远程传输封装
+- 保留下载能力
+- 在桌面侧为 native fallback 预留位置
 
-### `packages/preview-renderers`
+## 大文件为什么不会一上来把页面拖死
 
-这里放真正负责显示内容的渲染器，以及渲染器注册表。
+AnyPeek 对“大文件”的优化，主要集中在文本和 Hex 这两条路径。
 
-### `server/`
+### 1. 先样本读取，不整包探测
 
-共享代理逻辑放在这里，本地 Node、Vercel、Cloudflare Workers、Deno 都围着这层复用。
+格式识别默认只读 `64 KB` 样本。
 
-### `worker/index.ts`
+### 2. 文本和 Hex 按块继续读
 
-Cloudflare Workers 入口，直接复用 `createProxyApp()`。
+默认块大小是：
 
-### `deno.server.ts`
+- 文本：`256 KB`
+- Hex：`256 KB`
 
-Deno 入口，静态资源和 API 路由一起对外提供。
+远程资源优先尝试 `Range` 请求；如果远端不支持分段，再回退到整包读取。
 
-## 改代码时，建议先看这些文件
+### 3. 列表使用虚拟滚动
 
-- `src/hooks/usePreviewWorkbench.ts`：输入、状态切换、远程 / 本地资源创建
-- `packages/preview-core/src/resource.ts`：本地和远程资源的统一抽象
-- `packages/preview-core/src/detect.ts`：格式判断和文本 / 二进制兜底逻辑
-- `server/remote-proxy.ts`：远程请求校验、重定向校验、响应头清理
-- `packages/preview-renderers/src/registry.tsx`：渲染器选择入口
-- `packages/preview-renderers/src/renderers/text.tsx`：大文本预览路径
-- `packages/preview-renderers/src/renderers/hex.tsx`：未知二进制和大文件兜底路径
+文本行和 Hex 行很多时，页面并不会把所有行都塞进 DOM，而是只保留视口附近的内容。
 
-## 改完代码后
+这就是为什么它在这些场景里会明显轻很多：
+
+- 大日志
+- 大文本
+- JSON 导出文件
+- CSV / TSV
+- 想先扫一眼未知二进制内容
+
+## Web 版和桌面版分别怎么分工
+
+### Web 版
+
+- 前端在浏览器里跑
+- 远程 URL 通过 `/api/file` 代理读取
+- 可部署到本地开发、Vercel、Deno、Cloudflare Workers
+
+### 桌面版（Tauri）
+
+- 前端还是同一套 React UI
+- 远程读取改走 Tauri 命令
+- 安全校验和重定向校验在 Rust 侧再做一遍
+
+所以桌面版不是另起炉灶，而是把“远程资源怎么读”这一层换到了本地桌面运行时。
+
+## 改代码时，通常先看这些文件最省时间
+
+### 想看整体交互和入口
+
+- `src/App.tsx`
+- `src/hooks/usePreviewWorkbench.ts`
+
+### 想看资源抽象和预览判定
+
+- `packages/preview-core/src/resource.ts`
+- `packages/preview-core/src/detect.ts`
+- `packages/preview-core/src/types.ts`
+
+### 想看远程代理和安全边界
+
+- `server/app.ts`
+- `server/remote-proxy.ts`
+- `server/remote-proxy.test.ts`
+
+### 想看具体渲染器
+
+- `packages/preview-renderers/src/registry.tsx`
+- `packages/preview-renderers/src/renderers/text.tsx`
+- `packages/preview-renderers/src/renderers/hex.tsx`
+- `packages/preview-renderers/src/renderers/docx.tsx`
+- `packages/preview-renderers/src/renderers/spreadsheet.tsx`
+- `packages/preview-renderers/src/renderers/presentation.tsx`
+
+### 想看桌面侧远程读取
+
+- `src/platform/tauri.ts`
+- `src-tauri/src/commands.rs`
+
+## 改完以后，最少跑一轮这些检查
 
 ```bash
 pnpm test
@@ -217,3 +271,12 @@ pnpm run check:cf
 pnpm run check:deno
 pnpm run build
 ```
+
+如果你动了桌面侧，再补一轮 Tauri 相关验证会更稳。
+
+## 相关文档
+
+- [文档导航](./README.md)
+- [部署指南](./DEPLOYMENT.md)
+- [贡献说明](./CONTRIBUTING.md)
+- [维护手册](./MAINTAINERS.md)
