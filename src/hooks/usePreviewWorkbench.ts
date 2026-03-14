@@ -143,7 +143,6 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
       const requestId = ++requestIdRef.current;
       setBusy(true);
       setError(null);
-      replaceResource(null);
 
       try {
         const nextResource = tauriRuntime
@@ -175,7 +174,6 @@ export function usePreviewWorkbench(): PreviewWorkbenchState {
       const requestId = ++requestIdRef.current;
       setBusy(true);
       setError(null);
-      replaceResource(null);
 
       try {
         const nextResource = await createLocalPreviewResource(file);

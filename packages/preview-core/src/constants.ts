@@ -6,3 +6,4 @@ export const TEXT_ROW_HEIGHT = 24;
 export const PRESENTATION_WIDTH = 960;
 export const PRESENTATION_HEIGHT = 540;
 export const DEFAULT_PROXY_BASE = '/api/file';
+export const PROXY_RESOLVED_FILENAME_HEADER = 'x-anypeek-file-name';

@@ -21,38 +21,55 @@ interface HexPreviewState {
   loadingInitial: boolean;
   loadingMore: boolean;
   error: string | null;
-  lines: HexLine[];
+  lineCount: number;
   loadedBytes: number;
   done: boolean;
 }
+
+const HEX_BYTE_LOOKUP = Array.from({ length: 256 }, (_, value) => value.toString(16).toUpperCase().padStart(2, '0'));
+const ASCII_BYTE_LOOKUP = Array.from({ length: 256 }, (_, value) => (value >= 32 && value <= 126 ? String.fromCharCode(value) : '.'));
 
 function formatHexOffset(offset: number): string {
   return offset.toString(16).toUpperCase().padStart(8, '0');
 }
 
 function formatHexLines(bytes: Uint8Array, startOffset: number, bytesPerRow = 16): HexLine[] {
-  const lines: HexLine[] = [];
+  const lineCount = Math.ceil(bytes.length / bytesPerRow);
+  const lines = new Array<HexLine>(lineCount);
 
-  for (let offset = 0; offset < bytes.length; offset += bytesPerRow) {
+  for (let lineIndex = 0, offset = 0; offset < bytes.length; lineIndex += 1, offset += bytesPerRow) {
     const absoluteOffset = startOffset + offset;
-    const slice = bytes.subarray(offset, offset + bytesPerRow);
-    const hex = Array.from(slice)
-      .map((value) => value.toString(16).toUpperCase().padStart(2, '0'))
-      .join(' ')
-      .padEnd(bytesPerRow * 3 - 1, ' ');
+    const sliceLength = Math.min(bytesPerRow, bytes.length - offset);
+    let hex = '';
+    let ascii = '';
 
-    const ascii = Array.from(slice)
-      .map((value) => (value >= 32 && value <= 126 ? String.fromCharCode(value) : '.'))
-      .join('');
+    for (let index = 0; index < sliceLength; index += 1) {
+      const value = bytes[offset + index];
+      if (index > 0) {
+        hex += ' ';
+      }
+      hex += HEX_BYTE_LOOKUP[value] ?? '00';
+      ascii += ASCII_BYTE_LOOKUP[value] ?? '.';
+    }
 
-    lines.push({
+    if (sliceLength < bytesPerRow) {
+      hex = hex.padEnd(bytesPerRow * 3 - 1, ' ');
+    }
+
+    lines[lineIndex] = {
       offset: formatHexOffset(absoluteOffset),
       hex,
       ascii
-    });
+    };
   }
 
   return lines;
+}
+
+function appendHexLines(target: HexLine[], source: readonly HexLine[]): void {
+  for (const line of source) {
+    target.push(line);
+  }
 }
 
 export function HexRenderer({ resource }: RendererProps) {
@@ -61,7 +78,7 @@ export function HexRenderer({ resource }: RendererProps) {
     loadingInitial: true,
     loadingMore: false,
     error: null,
-    lines: [],
+    lineCount: 0,
     loadedBytes: 0,
     done: false
   });
@@ -94,7 +111,7 @@ export function HexRenderer({ resource }: RendererProps) {
       } else {
         const startOffset = offsetRef.current;
         offsetRef.current += bytes.byteLength;
-        linesRef.current = linesRef.current.concat(formatHexLines(bytes, startOffset));
+        appendHexLines(linesRef.current, formatHexLines(bytes, startOffset));
 
         const reachedEnd = resource.size != null ? offsetRef.current >= resource.size : bytes.byteLength < HEX_CHUNK_BYTES;
         if (reachedEnd) {
@@ -106,7 +123,7 @@ export function HexRenderer({ resource }: RendererProps) {
         loadingInitial: false,
         loadingMore: false,
         error: null,
-        lines: [...linesRef.current],
+        lineCount: linesRef.current.length,
         loadedBytes: offsetRef.current,
         done: doneRef.current
       });
@@ -135,7 +152,7 @@ export function HexRenderer({ resource }: RendererProps) {
       loadingInitial: true,
       loadingMore: false,
       error: null,
-      lines: [],
+      lineCount: 0,
       loadedBytes: 0,
       done: false
     });
@@ -166,20 +183,21 @@ export function HexRenderer({ resource }: RendererProps) {
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
     };
-  }, [loadMore, state.lines.length]);
+  }, [loadMore, state.lineCount]);
 
   const virtualizer = useVirtualizer({
-    count: state.lines.length + (state.done ? 0 : 1),
+    count: state.lineCount + (state.done ? 0 : 1),
     estimateSize: () => TEXT_ROW_HEIGHT,
     getScrollElement: () => viewportRef.current,
     overscan: 20
   });
+  const lines = linesRef.current;
 
-  if (state.loadingInitial && state.lines.length === 0) {
+  if (state.loadingInitial && state.lineCount === 0) {
     return <LoadingCard>Hex 视图加载中</LoadingCard>;
   }
 
-  if (state.error && state.lines.length === 0) {
+  if (state.error && state.lineCount === 0) {
     return <ErrorCard message={state.error} />;
   }
 
@@ -189,7 +207,7 @@ export function HexRenderer({ resource }: RendererProps) {
       <div className="virtual-viewport" ref={viewportRef}>
         <div className="virtual-stage" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => {
-            const isLoaderRow = item.index >= state.lines.length;
+            const isLoaderRow = item.index >= state.lineCount;
             if (isLoaderRow) {
               return (
                 <div
@@ -202,7 +220,7 @@ export function HexRenderer({ resource }: RendererProps) {
               );
             }
 
-            const line = state.lines[item.index];
+            const line = lines[item.index];
             if (!line) {
               return null;
             }

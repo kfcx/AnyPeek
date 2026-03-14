@@ -1,15 +1,7 @@
 import { HTTPException } from 'hono/http-exception';
 
+import { PROXY_RESOLVED_FILENAME_HEADER } from '../packages/preview-core/src/constants.ts';
 import { parseContentDispositionFilename, sanitizeFileName } from '../packages/preview-core/src/file-name.ts';
-
-const PRIVATE_IPV4_PATTERNS = [
-  /^10\./,
-  /^127\./,
-  /^169\.254\./,
-  /^172\.(1[6-9]|2\d|3[0-1])\./,
-  /^192\.168\./,
-  /^0\./
-];
 
 const HOP_BY_HOP_RESPONSE_HEADERS = [
   'connection',
@@ -52,53 +44,196 @@ function remoteFailure(status: number, message: string): never {
 }
 
 function normalizeHost(hostnameOrAddress: string): string {
-  const value = hostnameOrAddress.trim().toLowerCase();
+  let value = hostnameOrAddress.trim().toLowerCase();
   if (value.startsWith('[') && value.endsWith(']')) {
-    return value.slice(1, -1);
+    value = value.slice(1, -1);
   }
-  return value;
+  return value.replace(/\.+$/u, '');
 }
 
-function isIpv4Literal(hostnameOrAddress: string): boolean {
+function parseIpv4Octets(hostnameOrAddress: string): number[] | null {
   const value = normalizeHost(hostnameOrAddress);
   const segments = value.split('.');
   if (segments.length !== 4) {
-    return false;
+    return null;
   }
 
-  return segments.every((segment) => {
-    if (!/^\d{1,3}$/.test(segment)) {
-      return false;
+  const octets = new Array<number>(4);
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (!/^\d{1,3}$/u.test(segment)) {
+      return null;
     }
 
     const numeric = Number.parseInt(segment, 10);
-    return numeric >= 0 && numeric <= 255;
-  });
+    if (numeric < 0 || numeric > 255) {
+      return null;
+    }
+    octets[index] = numeric;
+  }
+
+  return octets;
+}
+
+function parseIpv6Hextets(hostnameOrAddress: string): number[] | null {
+  let value = normalizeHost(hostnameOrAddress);
+  if (!value.includes(':')) {
+    return null;
+  }
+
+  if (value.includes('.')) {
+    const lastColonIndex = value.lastIndexOf(':');
+    if (lastColonIndex < 0) {
+      return null;
+    }
+
+    const tail = parseIpv4Octets(value.slice(lastColonIndex + 1));
+    if (!tail) {
+      return null;
+    }
+
+    value = `${value.slice(0, lastColonIndex)}:${((tail[0] << 8) | tail[1]).toString(16)}:${((tail[2] << 8) | tail[3]).toString(16)}`;
+  }
+
+  const hasCompression = value.includes('::');
+  if (hasCompression && value.indexOf('::') !== value.lastIndexOf('::')) {
+    return null;
+  }
+
+  const isValidHextet = (candidate: string) => /^[0-9a-f]{1,4}$/iu.test(candidate);
+
+  if (!hasCompression) {
+    const parts = value.split(':');
+    if (parts.length !== 8 || parts.some((part) => !isValidHextet(part))) {
+      return null;
+    }
+    return parts.map((part) => Number.parseInt(part, 16));
+  }
+
+  const [leftRaw, rightRaw = ''] = value.split('::');
+  const left = leftRaw ? leftRaw.split(':').filter(Boolean) : [];
+  const right = rightRaw ? rightRaw.split(':').filter(Boolean) : [];
+  if (left.some((part) => !isValidHextet(part)) || right.some((part) => !isValidHextet(part))) {
+    return null;
+  }
+
+  const missing = 8 - (left.length + right.length);
+  if (missing <= 0) {
+    return null;
+  }
+
+  return [...left, ...Array(missing).fill('0'), ...right].map((part) => Number.parseInt(part, 16));
+}
+
+function isIpv4Literal(hostnameOrAddress: string): boolean {
+  return parseIpv4Octets(hostnameOrAddress) != null;
 }
 
 function isIpv6Literal(hostnameOrAddress: string): boolean {
-  const value = normalizeHost(hostnameOrAddress);
-  return value.includes(':') && /^[0-9a-f:.]+$/i.test(value);
+  return parseIpv6Hextets(hostnameOrAddress) != null;
 }
 
 function isIpLiteral(hostnameOrAddress: string): boolean {
   return isIpv4Literal(hostnameOrAddress) || isIpv6Literal(hostnameOrAddress);
 }
 
-export function isPrivateIp(hostnameOrAddress: string): boolean {
-  const value = normalizeHost(hostnameOrAddress);
+function isPrivateIpv4(octets: readonly number[]): boolean {
+  const [a, b, c] = octets;
 
-  if (isIpv4Literal(value)) {
-    return PRIVATE_IPV4_PATTERNS.some((pattern) => pattern.test(value));
+  if (a === 0 || a === 10 || a === 127) {
+    return true;
   }
 
-  if (isIpv6Literal(value)) {
-    return (
-      value === '::1' ||
-      value.startsWith('fe80:') ||
-      value.startsWith('fc') ||
-      value.startsWith('fd')
-    );
+  if (a === 100 && b >= 64 && b <= 127) {
+    return true;
+  }
+
+  if (a === 169 && b === 254) {
+    return true;
+  }
+
+  if (a === 172 && b >= 16 && b <= 31) {
+    return true;
+  }
+
+  if (a === 192 && b === 0 && c === 0) {
+    return true;
+  }
+
+  if (a === 192 && b === 0 && c === 2) {
+    return true;
+  }
+
+  if (a === 192 && b === 88 && c === 99) {
+    return true;
+  }
+
+  if (a === 192 && b === 168) {
+    return true;
+  }
+
+  if (a === 198 && (b === 18 || b === 19)) {
+    return true;
+  }
+
+  if (a === 198 && b === 51 && c === 100) {
+    return true;
+  }
+
+  if (a === 203 && b === 0 && c === 113) {
+    return true;
+  }
+
+  return a >= 224;
+}
+
+function isPrivateIpv6(hextets: readonly number[]): boolean {
+  const [a, b, c, d, e, f, g, h] = hextets;
+
+  if (hextets.every((part) => part === 0)) {
+    return true;
+  }
+
+  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0 && g === 0 && h === 1) {
+    return true;
+  }
+
+  if ((a & 0xffc0) === 0xfe80) {
+    return true;
+  }
+
+  if ((a & 0xfe00) === 0xfc00) {
+    return true;
+  }
+
+  if ((a & 0xffc0) === 0xfec0) {
+    return true;
+  }
+
+  if ((a & 0xff00) === 0xff00) {
+    return true;
+  }
+
+  if (a === 0x2001 && b === 0x0db8) {
+    return true;
+  }
+
+  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0xffff) {
+    return isPrivateIpv4([(g >> 8) & 0xff, g & 0xff, (h >> 8) & 0xff, h & 0xff]);
+  }
+
+  return false;
+}
+
+export function isPrivateIp(hostnameOrAddress: string): boolean {
+  const ipv4 = parseIpv4Octets(hostnameOrAddress);
+  if (ipv4) {
+    return isPrivateIpv4(ipv4);
+  }
+
+  const ipv6 = parseIpv6Hextets(hostnameOrAddress);
+  if (ipv6) {
+    return isPrivateIpv6(ipv6);
   }
 
   return false;
@@ -121,7 +256,7 @@ export async function assertSafeTargetUrl(rawUrl: string, options: SafeTargetUrl
     badRequest('URL 里不允许携带账号或密码。');
   }
 
-  const hostname = url.hostname.toLowerCase();
+  const hostname = normalizeHost(url.hostname);
   if (hostname === 'localhost' || hostname.endsWith('.local') || isPrivateIp(hostname)) {
     badRequest('不允许访问本地或内网地址。');
   }
@@ -257,12 +392,15 @@ export async function proxyRemoteResource(
     remoteFailure(response.status, `目标资源请求失败，远端返回 ${response.status}。`);
   }
 
+  const resolvedFileName = resolveFileName(targetUrl, response);
   const headers = sanitizeProxyResponseHeaders(response.headers);
   headers.set('x-content-type-options', 'nosniff');
+  headers.set(PROXY_RESOLVED_FILENAME_HEADER, resolvedFileName);
 
   if (options.forceDownload) {
-    const fileName = resolveFileName(targetUrl, response);
-    headers.set('content-disposition', `attachment; filename="${fileName}"`);
+    headers.set('content-disposition', `attachment; filename="${resolvedFileName}"`);
+  } else {
+    headers.delete('content-disposition');
   }
 
   return new Response(response.body, {

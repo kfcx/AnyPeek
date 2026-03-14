@@ -17,9 +17,14 @@ interface TextPreviewState {
   loadingInitial: boolean;
   loadingMore: boolean;
   error: string | null;
-  lines: string[];
-  trailingLine: string;
+  lineCount: number;
   done: boolean;
+}
+
+function appendLines(target: string[], source: readonly string[]): void {
+  for (const line of source) {
+    target.push(line);
+  }
 }
 
 export function TextRenderer({ resource }: RendererProps) {
@@ -39,8 +44,7 @@ export function TextRenderer({ resource }: RendererProps) {
     loadingInitial: true,
     loadingMore: false,
     error: null,
-    lines: [],
-    trailingLine: '',
+    lineCount: 0,
     done: false
   });
 
@@ -56,8 +60,7 @@ export function TextRenderer({ resource }: RendererProps) {
     (next: Pick<TextPreviewState, 'loadingInitial' | 'loadingMore' | 'error'>) => {
       setState({
         ...next,
-        lines: [...linesRef.current],
-        trailingLine: carryRef.current,
+        lineCount: linesRef.current.length + (carryRef.current ? 1 : 0),
         done: doneRef.current
       });
     },
@@ -84,7 +87,7 @@ export function TextRenderer({ resource }: RendererProps) {
       if (!bytes.byteLength) {
         const tail = `${carryRef.current}${decoderRef.current?.decode() ?? ''}`;
         if (tail) {
-          linesRef.current = linesRef.current.concat(tail.replace(/\r\n?/g, '\n').split('\n'));
+          appendLines(linesRef.current, tail.replace(/\r\n?/g, '\n').split('\n'));
         }
         carryRef.current = '';
         doneRef.current = true;
@@ -96,14 +99,14 @@ export function TextRenderer({ resource }: RendererProps) {
         carryRef.current = parts.pop() ?? '';
 
         if (parts.length) {
-          linesRef.current = linesRef.current.concat(parts);
+          appendLines(linesRef.current, parts);
         }
 
         const reachedEnd = resource.size != null ? offsetRef.current >= resource.size : bytes.byteLength < TEXT_CHUNK_BYTES;
         if (reachedEnd) {
           const tail = `${carryRef.current}${decoderRef.current?.decode() ?? ''}`;
           if (tail) {
-            linesRef.current = linesRef.current.concat(tail.replace(/\r\n?/g, '\n').split('\n'));
+            appendLines(linesRef.current, tail.replace(/\r\n?/g, '\n').split('\n'));
           }
           carryRef.current = '';
           doneRef.current = true;
@@ -141,8 +144,7 @@ export function TextRenderer({ resource }: RendererProps) {
       loadingInitial: true,
       loadingMore: false,
       error: null,
-      lines: [],
-      trailingLine: '',
+      lineCount: 0,
       done: false
     });
 
@@ -172,9 +174,9 @@ export function TextRenderer({ resource }: RendererProps) {
     return () => {
       viewport.removeEventListener('scroll', handleScroll);
     };
-  }, [loadMore, state.lines.length]);
+  }, [loadMore, state.lineCount]);
 
-  const visibleLineCount = state.lines.length + (state.trailingLine ? 1 : 0);
+  const visibleLineCount = state.lineCount;
   const rowCount = visibleLineCount + (state.done ? 0 : 1);
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -185,6 +187,8 @@ export function TextRenderer({ resource }: RendererProps) {
   const virtualRows = virtualizer.getVirtualItems();
   const paddingTop = virtualRows.length ? virtualRows[0].start : 0;
   const paddingBottom = virtualRows.length ? Math.max(0, virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end) : 0;
+  const lines = linesRef.current;
+  const trailingLine = carryRef.current;
 
   if (state.loadingInitial && visibleLineCount === 0) {
     return <LoadingCard>文本加载中</LoadingCard>;
@@ -210,7 +214,7 @@ export function TextRenderer({ resource }: RendererProps) {
               );
             }
 
-            const line = item.index < state.lines.length ? state.lines[item.index] ?? '' : state.trailingLine;
+            const line = item.index < lines.length ? lines[item.index] ?? '' : trailingLine;
             return (
               <div key={item.key} className="text-row" style={{ minHeight: item.size }}>
                 <span className="text-row-number">{item.index + 1}</span>

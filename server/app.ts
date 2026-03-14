@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 
+import { PROXY_RESOLVED_FILENAME_HEADER } from '../packages/preview-core/src/constants.ts';
 import { proxyRemoteResource, type HostnameResolver } from './remote-proxy.ts';
 
 const DEFAULT_ALLOWED_HEADERS = [
@@ -21,7 +22,8 @@ const EXPOSED_HEADERS = [
   'Content-Range',
   'Content-Type',
   'ETag',
-  'Last-Modified'
+  'Last-Modified',
+  PROXY_RESOLVED_FILENAME_HEADER
 ].join(', ');
 
 export interface ProxyAppOptions {

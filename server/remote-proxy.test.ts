@@ -7,11 +7,18 @@ describe('remote proxy security', () => {
     expect(isPrivateIp('127.0.0.1')).toBe(true);
     expect(isPrivateIp('192.168.0.10')).toBe(true);
     expect(isPrivateIp('8.8.8.8')).toBe(false);
+    expect(isPrivateIp('100.64.0.1')).toBe(true);
+    expect(isPrivateIp('::ffff:127.0.0.1')).toBe(true);
   });
 
   it('blocks localhost and private addresses', async () => {
     await expect(assertSafeTargetUrl('http://localhost:3000/demo.txt')).rejects.toThrow();
     await expect(assertSafeTargetUrl('http://192.168.10.10/demo.txt')).rejects.toThrow();
+  });
+
+  it('blocks localhost with a trailing dot and private mapped IPv6 literals', async () => {
+    await expect(assertSafeTargetUrl('http://localhost./demo.txt')).rejects.toThrow();
+    await expect(assertSafeTargetUrl('http://[::ffff:127.0.0.1]/demo.txt')).rejects.toThrow();
   });
 
   it('blocks hostnames that resolve to private addresses when a resolver is provided', async () => {

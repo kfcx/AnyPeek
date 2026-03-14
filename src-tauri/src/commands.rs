@@ -117,16 +117,42 @@ fn resolve_file_name(requested_url: &Url, response: &Response) -> String {
     sanitize_file_name(&decoded)
 }
 
+fn normalize_host(host: &str) -> String {
+    host.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
 fn is_private_ip(address: IpAddr) -> bool {
     match address {
         IpAddr::V4(value) => {
-            value.is_private() || value.is_loopback() || value.is_link_local() || value.is_unspecified()
+            let [a, b, c, _] = value.octets();
+            value.is_private()
+                || value.is_loopback()
+                || value.is_link_local()
+                || value.is_unspecified()
+                || value.is_broadcast()
+                || value.is_multicast()
+                || a >= 240
+                || (a == 100 && (64..=127).contains(&b))
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 192 && b == 0 && c == 2)
+                || (a == 192 && b == 88 && c == 99)
+                || (a == 198 && matches!(b, 18 | 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113)
         }
         IpAddr::V6(value) => {
+            let segments = value.segments();
             value.is_loopback()
                 || value.is_unspecified()
                 || value.is_unique_local()
                 || value.is_unicast_link_local()
+                || value.is_multicast()
+                || ((segments[0] & 0xffc0) == 0xfec0)
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8)
+                || value
+                    .to_ipv4_mapped()
+                    .map(|mapped| is_private_ip(IpAddr::V4(mapped)))
+                    .unwrap_or(false)
         }
     }
 }
@@ -142,10 +168,10 @@ async fn assert_safe_target_url(raw_url: &str) -> Result<Url, String> {
         return Err("URL 里不允许携带账号或密码。".to_string());
     }
 
-    let hostname = url
-        .host_str()
-        .ok_or_else(|| "URL 无效，请提供完整的 http 或 https 地址。".to_string())?
-        .to_ascii_lowercase();
+    let hostname = normalize_host(
+        url.host_str()
+            .ok_or_else(|| "URL 无效，请提供完整的 http 或 https 地址。".to_string())?,
+    );
 
     if hostname == "localhost" || hostname.ends_with(".local") {
         return Err("不允许访问本地或内网地址。".to_string());

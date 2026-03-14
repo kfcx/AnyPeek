@@ -1,7 +1,11 @@
-import { SAMPLE_BYTES } from './constants';
-import { extractExtension, parseContentLength } from './bytes';
+import { concatChunks, extractExtension, parseContentLength } from './bytes';
+import { PROXY_RESOLVED_FILENAME_HEADER, SAMPLE_BYTES } from './constants';
 import { determinePreviewKind, sniffFileType } from './detect';
-import { parseContentDispositionFilename, resolveFileNameFromHeaders } from './file-name';
+import {
+  parseContentDispositionFilename,
+  resolveFileNameFromHeaders,
+  sanitizeFileName
+} from './file-name';
 import { createUuid } from './id';
 import { readErrorMessage, readResponseBytes, readResponseSample } from './io';
 import type { ResolvedPreviewResource } from './types';
@@ -75,11 +79,47 @@ export async function createRemotePreviewResource(
   const sampleBytes = await readResponseSample(response, SAMPLE_BYTES);
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
   const headerFileName = parseContentDispositionFilename(response.headers.get('content-disposition'));
-  const fileName = headerFileName ?? resolveFileNameFromHeaders(response.headers, rawUrl);
+  const proxyResolvedFileName = response.headers.get(PROXY_RESOLVED_FILENAME_HEADER);
+  const fileName = proxyResolvedFileName
+    ? sanitizeFileName(proxyResolvedFileName)
+    : headerFileName ?? resolveFileNameFromHeaders(response.headers, rawUrl);
   const size = parseContentLength(response.headers.get('content-length'));
   const sniffed = await sniffFileType(sampleBytes);
+  const prefixBytes = size != null ? sampleBytes.subarray(0, Math.min(size, sampleBytes.byteLength)) : sampleBytes;
+  const extension = extractExtension(fileName);
 
-  let wholeFilePromise: Promise<Uint8Array> | null = null;
+  let wholeFilePromise: Promise<Uint8Array> | null =
+    size != null && size <= prefixBytes.byteLength ? Promise.resolve(prefixBytes.subarray(0, size)) : null;
+
+  const readRange = async (start: number, endExclusive: number): Promise<Uint8Array> => {
+    if (endExclusive <= start) {
+      return new Uint8Array();
+    }
+
+    if (wholeFilePromise) {
+      const wholeFile = await wholeFilePromise;
+      return wholeFile.subarray(start, endExclusive);
+    }
+
+    const rangeEnd = Math.max(start, endExclusive - 1);
+    const nextResponse = await transport.fetch(rawUrl, {
+      headers: {
+        Range: `bytes=${start}-${rangeEnd}`
+      }
+    });
+
+    if (nextResponse.status === 206) {
+      return await readResponseSample(nextResponse, endExclusive - start);
+    }
+
+    if (!nextResponse.ok) {
+      throw new Error(await readErrorMessage(nextResponse));
+    }
+
+    const wholeFile = await readResponseBytes(nextResponse);
+    wholeFilePromise ??= Promise.resolve(wholeFile);
+    return wholeFile.subarray(start, endExclusive);
+  };
 
   const readWholeFile = async (maxBytes?: number): Promise<Uint8Array> => {
     if (!wholeFilePromise) {
@@ -102,14 +142,14 @@ export async function createRemotePreviewResource(
     inputValue: rawUrl,
     kind: determinePreviewKind({
       fileName,
-      fileExtension: extractExtension(headerFileName ?? ''),
+      fileExtension: extension,
       contentType,
       sniffedMime: sniffed?.mime,
       sniffedExt: sniffed?.ext,
       sampleBytes
     }),
     fileName,
-    extension: extractExtension(fileName),
+    extension,
     contentType,
     size,
     previewUrl: transport.buildPreviewUrl(rawUrl),
@@ -120,24 +160,26 @@ export async function createRemotePreviewResource(
         return await readWholeFile(maxBytes);
       },
       async readSlice(start, endExclusive) {
-        const rangeEnd = Math.max(start, endExclusive - 1);
-        const nextResponse = await transport.fetch(rawUrl, {
-          headers: {
-            Range: `bytes=${start}-${rangeEnd}`
+        if (endExclusive <= start) {
+          return new Uint8Array();
+        }
+
+        if (start < prefixBytes.byteLength) {
+          const prefixEnd = Math.min(endExclusive, prefixBytes.byteLength);
+          if (endExclusive <= prefixBytes.byteLength) {
+            return prefixBytes.subarray(start, prefixEnd);
           }
-        });
 
-        if (nextResponse.status === 206) {
-          return await readResponseSample(nextResponse, endExclusive - start);
+          const prefix = prefixBytes.subarray(start, prefixEnd);
+          const suffix = await readRange(prefixBytes.byteLength, endExclusive);
+          if (!suffix.byteLength) {
+            return prefix;
+          }
+
+          return concatChunks([prefix, suffix], prefix.byteLength + suffix.byteLength);
         }
 
-        if (!nextResponse.ok) {
-          throw new Error(await readErrorMessage(nextResponse));
-        }
-
-        const wholeFile = await readResponseBytes(nextResponse);
-        wholeFilePromise ??= Promise.resolve(wholeFile);
-        return wholeFile.subarray(start, endExclusive);
+        return await readRange(start, endExclusive);
       }
     },
     diagnostics: {

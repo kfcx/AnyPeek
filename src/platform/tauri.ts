@@ -2,6 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 
 import {
   SAMPLE_BYTES,
+  concatChunks,
   determinePreviewKind,
   extractExtension,
   sniffFileType,
@@ -89,10 +90,13 @@ export async function downloadTauriRemoteUrl(rawUrl: string): Promise<{ bytes: U
       sampleBytes: SAMPLE_BYTES
     }
   });
-  const result = await readRemote(rawUrl);
+  const sampleBytes = toUint8Array(probe.sampleBytes);
+  const bytes = probe.size != null && probe.size <= sampleBytes.byteLength
+    ? sampleBytes.subarray(0, probe.size)
+    : toUint8Array((await readRemote(rawUrl)).bytes);
 
   return {
-    bytes: toUint8Array(result.bytes),
+    bytes,
     contentType: probe.contentType || 'application/octet-stream',
     fileName: probe.fileName || 'remote-file'
   };
@@ -108,7 +112,9 @@ export async function createTauriRemotePreviewResource(rawUrl: string): Promise<
 
   const sampleBytes = toUint8Array(probe.sampleBytes);
   const sniffed = await sniffFileType(sampleBytes);
-  let wholeFilePromise: Promise<Uint8Array> | null = null;
+  const prefixBytes = probe.size != null ? sampleBytes.subarray(0, Math.min(probe.size, sampleBytes.byteLength)) : sampleBytes;
+  let wholeFilePromise: Promise<Uint8Array> | null =
+    probe.size != null && probe.size <= prefixBytes.byteLength ? Promise.resolve(prefixBytes.subarray(0, probe.size)) : null;
 
   const readWholeFile = async (maxBytes?: number): Promise<Uint8Array> => {
     if (!wholeFilePromise) {
@@ -117,6 +123,26 @@ export async function createTauriRemotePreviewResource(rawUrl: string): Promise<
 
     const bytes = await wholeFilePromise;
     return assertMaxBytes(bytes, maxBytes);
+  };
+
+  const readRange = async (start: number, endExclusive: number): Promise<Uint8Array> => {
+    if (endExclusive <= start) {
+      return new Uint8Array();
+    }
+
+    if (wholeFilePromise) {
+      const wholeFile = await wholeFilePromise;
+      return wholeFile.subarray(start, endExclusive);
+    }
+
+    const result = await readRemote(rawUrl, start, endExclusive);
+    const bytes = toUint8Array(result.bytes);
+    if (result.complete) {
+      wholeFilePromise ??= Promise.resolve(bytes);
+      return bytes.subarray(start, endExclusive);
+    }
+
+    return bytes;
   };
 
   return {
@@ -143,14 +169,26 @@ export async function createTauriRemotePreviewResource(rawUrl: string): Promise<
         return await readWholeFile(maxBytes);
       },
       async readSlice(start, endExclusive) {
-        const result = await readRemote(rawUrl, start, endExclusive);
-        const bytes = toUint8Array(result.bytes);
-        if (result.complete) {
-          wholeFilePromise ??= Promise.resolve(bytes);
-          return bytes.subarray(start, endExclusive);
+        if (endExclusive <= start) {
+          return new Uint8Array();
         }
 
-        return bytes;
+        if (start < prefixBytes.byteLength) {
+          const prefixEnd = Math.min(endExclusive, prefixBytes.byteLength);
+          if (endExclusive <= prefixBytes.byteLength) {
+            return prefixBytes.subarray(start, prefixEnd);
+          }
+
+          const prefix = prefixBytes.subarray(start, prefixEnd);
+          const suffix = await readRange(prefixBytes.byteLength, endExclusive);
+          if (!suffix.byteLength) {
+            return prefix;
+          }
+
+          return concatChunks([prefix, suffix], prefix.byteLength + suffix.byteLength);
+        }
+
+        return await readRange(start, endExclusive);
       }
     },
     diagnostics: {
