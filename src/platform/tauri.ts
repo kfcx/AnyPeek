@@ -73,6 +73,19 @@ export function isTauriRuntime(): boolean {
   return isTauri();
 }
 
+export async function listenTauriWindowFocusChanged(
+  listener: (focused: boolean) => void
+): Promise<(() => void) | null> {
+  if (!isTauri()) {
+    return null;
+  }
+
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  return await getCurrentWindow().onFocusChanged(({ payload }) => {
+    listener(payload);
+  });
+}
+
 async function readRemote(rawUrl: string, start?: number, endExclusive?: number): Promise<TauriReadResult> {
   return await invokeTauri<TauriReadResult>('read_remote_resource', {
     payload: {

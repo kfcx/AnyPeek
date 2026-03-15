@@ -1,9 +1,12 @@
 import {
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
-  type DragEvent as ReactDragEvent
+  type DragEvent as ReactDragEvent,
+  type MutableRefObject,
+  type RefObject
 } from 'react';
 
 import { resolveRenderer } from '@preview/renderers';
@@ -14,6 +17,7 @@ import { MetadataBar } from './components/MetadataBar';
 import { PreviewPane } from './components/PreviewPane';
 import { Toolbar } from './components/Toolbar';
 import { usePreviewWorkbench } from './hooks/usePreviewWorkbench';
+import { listenTauriWindowFocusChanged } from './platform/tauri';
 
 function hasFiles(event: DragEvent | ReactDragEvent<HTMLElement>): boolean {
   return Array.from(event.dataTransfer?.types ?? []).includes('Files');
@@ -21,14 +25,44 @@ function hasFiles(event: DragEvent | ReactDragEvent<HTMLElement>): boolean {
 
 const CTRL_DOUBLE_TAP_DELAY = 360;
 
+function cancelScheduledFocus(frameRef: MutableRefObject<number | null>): void {
+  if (frameRef.current == null) {
+    return;
+  }
+
+  window.cancelAnimationFrame(frameRef.current);
+  frameRef.current = null;
+}
+
+function scheduleUrlInputFocus(
+  inputRef: RefObject<HTMLInputElement | null>,
+  frameRef: MutableRefObject<number | null>
+): void {
+  cancelScheduledFocus(frameRef);
+  frameRef.current = window.requestAnimationFrame(() => {
+    frameRef.current = null;
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+
+    input.focus({ preventScroll: true });
+    if (document.activeElement === input) {
+      input.select();
+    }
+  });
+}
+
 export default function App() {
   const workbench = usePreviewWorkbench();
   const [dragDepth, setDragDepth] = useState(0);
   const [toolbarVisible, setToolbarVisible] = useState(true);
 
   const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const focusFrameRef = useRef<number | null>(null);
   const lastCtrlTapAtRef = useRef(0);
   const lastHiddenRemoteResourceIdRef = useRef('');
+  const shouldRestoreToolbarOnActivateRef = useRef(false);
 
   const activeRenderer = useMemo(
     () => (workbench.resource ? resolveRenderer(workbench.resource) : null),
@@ -36,19 +70,27 @@ export default function App() {
   );
   const hasPreview = Boolean(workbench.resource && activeRenderer);
   const showCenteredEmptyState = !hasPreview && !workbench.error;
+  const markToolbarForRestore = useEffectEvent(() => {
+    shouldRestoreToolbarOnActivateRef.current = true;
+  });
+  const restoreToolbarAfterActivate = useEffectEvent(() => {
+    if (!shouldRestoreToolbarOnActivateRef.current) {
+      return;
+    }
+
+    shouldRestoreToolbarOnActivateRef.current = false;
+    setToolbarVisible(true);
+    scheduleUrlInputFocus(urlInputRef, focusFrameRef);
+  });
 
   useEffect(() => {
     if (!toolbarVisible) {
       return;
     }
 
-    const frame = window.requestAnimationFrame(() => {
-      urlInputRef.current?.focus({ preventScroll: true });
-      urlInputRef.current?.select();
-    });
-
+    scheduleUrlInputFocus(urlInputRef, focusFrameRef);
     return () => {
-      window.cancelAnimationFrame(frame);
+      cancelScheduledFocus(focusFrameRef);
     };
   }, [toolbarVisible]);
 
@@ -82,6 +124,53 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [toolbarVisible]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        markToolbarForRestore();
+        return;
+      }
+
+      restoreToolbarAfterActivate();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelScheduledFocus(focusFrameRef);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void listenTauriWindowFocusChanged((focused) => {
+      if (focused) {
+        restoreToolbarAfterActivate();
+        return;
+      }
+
+      markToolbarForRestore();
+    })
+      .then((nextUnlisten) => {
+        if (disposed) {
+          nextUnlisten?.();
+          return;
+        }
+
+        unlisten = nextUnlisten;
+      })
+      .catch((error) => {
+        console.warn('桌面窗口焦点监听初始化失败。', error);
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!workbench.resource || workbench.busy || workbench.error || workbench.resource.source !== 'remote') {

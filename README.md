@@ -3,7 +3,7 @@
 <h1>AnyPeek</h1>
 <img src="./src-tauri/icons/icon.png" alt="AnyPeek icon" width="128" />
 
-<p><strong>快速查看任意网络或本地资源。</strong></p>
+<p><strong>快速查看任意网络与本地资源。</strong></p>
 <p>AnyPeek 是一个轻量预览工具：输入 URL，或者拖放本地文件进来，快速查看里面到底是什么内容。</p>
 
 </div>
