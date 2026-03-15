@@ -1,4 +1,4 @@
-import { concatChunks, extractExtension, parseContentLength } from './bytes';
+import { concatChunks, extractExtension, parseContentLength, parseContentRangeTotal } from './bytes';
 import { PROXY_RESOLVED_FILENAME_HEADER, SAMPLE_BYTES } from './constants';
 import { determinePreviewKind, sniffFileType } from './detect';
 import {
@@ -71,7 +71,14 @@ export async function createRemotePreviewResource(
   rawUrl: string,
   transport: RemoteTransport
 ): Promise<ResolvedPreviewResource> {
-  const response = await transport.fetch(rawUrl);
+  let response = await transport.fetch(rawUrl, {
+    headers: {
+      Range: `bytes=0-${SAMPLE_BYTES - 1}`
+    }
+  });
+  if (response.status === 416) {
+    response = await transport.fetch(rawUrl);
+  }
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
   }
@@ -83,7 +90,10 @@ export async function createRemotePreviewResource(
   const fileName = proxyResolvedFileName
     ? sanitizeFileName(proxyResolvedFileName)
     : headerFileName ?? resolveFileNameFromHeaders(response.headers, rawUrl);
-  const size = parseContentLength(response.headers.get('content-length'));
+  const size =
+    response.status === 206
+      ? parseContentRangeTotal(response.headers.get('content-range'))
+      : parseContentLength(response.headers.get('content-length'));
   const sniffed = await sniffFileType(sampleBytes);
   const prefixBytes = size != null ? sampleBytes.subarray(0, Math.min(size, sampleBytes.byteLength)) : sampleBytes;
   const extension = extractExtension(fileName);

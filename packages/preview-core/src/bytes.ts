@@ -24,6 +24,17 @@ export function parseContentLength(value: string | null | undefined): number | n
   return Number.isFinite(size) ? size : null;
 }
 
+export function parseContentRangeTotal(value: string | null | undefined): number | null {
+  const source = String(value ?? '').trim();
+  const match = source.match(/^bytes\s+\d+-\d+\/(\d+|\*)$/iu);
+  if (!match || match[1] === '*') {
+    return null;
+  }
+
+  const size = Number.parseInt(match[1], 10);
+  return Number.isFinite(size) ? size : null;
+}
+
 export function countChar(source: string, targetChar: string): number {
   let count = 0;
   for (const char of source) {

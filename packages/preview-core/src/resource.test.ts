@@ -21,12 +21,15 @@ function createTransport(fetcher: RemoteTransport['fetch']): RemoteTransport {
 describe('createRemotePreviewResource', () => {
   it('uses the proxy-resolved file name to classify redirected office files', async () => {
     let fetchCount = 0;
-    const transport = createTransport(async () => {
+    let probeRange = '';
+    const transport = createTransport(async (_rawUrl, init) => {
       fetchCount += 1;
+      probeRange = new Headers(init?.headers).get('Range') ?? '';
       return new Response(ZIP_SAMPLE, {
+        status: 206,
         headers: {
           'content-type': 'application/octet-stream',
-          'content-length': String(ZIP_SAMPLE.byteLength),
+          'content-range': `bytes 0-${ZIP_SAMPLE.byteLength - 1}/${ZIP_SAMPLE.byteLength}`,
           [PROXY_RESOLVED_FILENAME_HEADER]: 'report.docx'
         }
       });
@@ -37,14 +40,18 @@ describe('createRemotePreviewResource', () => {
     expect(resource.fileName).toBe('report.docx');
     expect(resource.extension).toBe('docx');
     expect(resource.kind).toBe('docx');
+    expect(resource.size).toBe(ZIP_SAMPLE.byteLength);
+    expect(probeRange).toBe(`bytes=0-${SAMPLE_BYTES - 1}`);
     expect(fetchCount).toBe(1);
   });
 
   it('reuses the sampled bytes when the whole file already fits inside the probe window', async () => {
     let fetchCount = 0;
+    let probeRange = '';
     const body = new TextEncoder().encode('hello world');
-    const transport = createTransport(async () => {
+    const transport = createTransport(async (_rawUrl, init) => {
       fetchCount += 1;
+      probeRange = new Headers(init?.headers).get('Range') ?? '';
       return new Response(body, {
         headers: {
           'content-type': 'text/plain; charset=utf-8',
@@ -57,26 +64,56 @@ describe('createRemotePreviewResource', () => {
     const bytes = await resource.handle.readAll();
 
     expect(new TextDecoder().decode(bytes)).toBe('hello world');
+    expect(probeRange).toBe(`bytes=0-${SAMPLE_BYTES - 1}`);
     expect(fetchCount).toBe(1);
+  });
+
+  it('falls back to a plain GET when the probe range is not satisfiable', async () => {
+    const requestRanges: Array<string | null> = [];
+    const transport = createTransport(async (_rawUrl, init) => {
+      const range = new Headers(init?.headers).get('Range');
+      requestRanges.push(range);
+
+      if (requestRanges.length === 1) {
+        return new Response(null, { status: 416 });
+      }
+
+      return new Response(new Uint8Array(), {
+        headers: {
+          'content-type': 'application/octet-stream',
+          'content-length': '0'
+        }
+      });
+    });
+
+    const resource = await createRemotePreviewResource('https://example.com/empty.bin', transport);
+    const bytes = await resource.handle.readAll();
+
+    expect(requestRanges).toEqual([`bytes=0-${SAMPLE_BYTES - 1}`, null]);
+    expect(resource.size).toBe(0);
+    expect(bytes).toEqual(new Uint8Array());
   });
 
   it('starts follow-up range reads after the sampled prefix instead of downloading it twice', async () => {
     const prefix = new Uint8Array(SAMPLE_BYTES).fill(0x41);
     const suffix = new Uint8Array([0x42, 0x43, 0x44, 0x45]);
-    const rangeRequests: string[] = [];
+    let probeRange = '';
+    const followUpRangeRequests: string[] = [];
 
     const transport = createTransport(async (_rawUrl, init) => {
       const range = new Headers(init?.headers).get('Range');
-      if (!range) {
+      if (range === `bytes=0-${SAMPLE_BYTES - 1}`) {
+        probeRange = range;
         return new Response(prefix, {
+          status: 206,
           headers: {
             'content-type': 'text/plain; charset=utf-8',
-            'content-length': String(prefix.byteLength + suffix.byteLength)
+            'content-range': `bytes 0-${prefix.byteLength - 1}/${prefix.byteLength + suffix.byteLength}`
           }
         });
       }
 
-      rangeRequests.push(range);
+      followUpRangeRequests.push(range ?? '');
       return new Response(suffix, {
         status: 206,
         headers: {
@@ -89,7 +126,9 @@ describe('createRemotePreviewResource', () => {
     const resource = await createRemotePreviewResource('https://example.com/demo.txt', transport);
     const bytes = await resource.handle.readSlice(0, SAMPLE_BYTES + suffix.byteLength);
 
-    expect(rangeRequests).toEqual([`bytes=${SAMPLE_BYTES}-${SAMPLE_BYTES + suffix.byteLength - 1}`]);
+    expect(probeRange).toBe(`bytes=0-${SAMPLE_BYTES - 1}`);
+    expect(resource.size).toBe(prefix.byteLength + suffix.byteLength);
+    expect(followUpRangeRequests).toEqual([`bytes=${SAMPLE_BYTES}-${SAMPLE_BYTES + suffix.byteLength - 1}`]);
     expect(bytes.byteLength).toBe(prefix.byteLength + suffix.byteLength);
     expect(bytes.subarray(0, prefix.byteLength)).toEqual(prefix);
     expect(bytes.subarray(prefix.byteLength)).toEqual(suffix);

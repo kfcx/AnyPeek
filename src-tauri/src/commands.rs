@@ -95,6 +95,16 @@ fn parse_content_disposition_filename(headers: &HeaderMap) -> Option<String> {
     extract_filename_param(content_disposition, "filename=").map(|value| sanitize_file_name(&value))
 }
 
+fn parse_content_range_total(headers: &HeaderMap) -> Option<u64> {
+    let content_range = headers.get(header::CONTENT_RANGE)?.to_str().ok()?.trim();
+    let (_, total) = content_range.rsplit_once('/')?;
+    if total == "*" {
+        return None;
+    }
+
+    total.parse::<u64>().ok()
+}
+
 fn resolve_file_name(requested_url: &Url, response: &Response) -> String {
     if let Some(from_header) = parse_content_disposition_filename(response.headers()) {
         return from_header;
@@ -323,7 +333,11 @@ pub async fn probe_remote_resource(payload: RemoteProbeRequest) -> Result<Remote
         .clamp(1, 1024 * 1024);
 
     let client = build_client()?;
-    let (requested_url, mut response) = request_remote_resource(&client, &payload.raw_url, None).await?;
+    let (mut requested_url, mut response) =
+        request_remote_resource(&client, &payload.raw_url, Some((0, sample_limit))).await?;
+    if response.status() == StatusCode::RANGE_NOT_SATISFIABLE {
+        (requested_url, response) = request_remote_resource(&client, &payload.raw_url, None).await?;
+    }
     ensure_supported_status(&response)?;
 
     let file_name = resolve_file_name(&requested_url, &response);
@@ -333,7 +347,11 @@ pub async fn probe_remote_resource(payload: RemoteProbeRequest) -> Result<Remote
         .and_then(|value| value.to_str().ok())
         .map(|value| value.to_string())
         .unwrap_or_else(|| "application/octet-stream".to_string());
-    let size = response.content_length();
+    let size = if response.status() == StatusCode::PARTIAL_CONTENT {
+        parse_content_range_total(response.headers())
+    } else {
+        response.content_length()
+    };
     let sample_bytes = read_response_sample(&mut response, sample_limit).await?;
 
     Ok(RemoteProbeResult {
