@@ -51,10 +51,7 @@ jobs:
   deploy_cloudflare:
     needs: validate
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' || github.event.inputs.target == 'all' || github.event.inputs.target == 'cloudflare') &&
-      secrets.CLOUDFLARE_API_TOKEN != '' &&
-      secrets.CLOUDFLARE_ACCOUNT_ID != ''
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'cloudflare' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +68,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check Cloudflare secrets
+        id: cloudflare_secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ -n "${CLOUDFLARE_API_TOKEN}" && -n "${CLOUDFLARE_ACCOUNT_ID}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "Cloudflare secrets are not configured; skipping deployment."
+          fi
+
       - name: Deploy to Cloudflare Workers
+        if: steps.cloudflare_secrets.outputs.available == 'true'
         run: pnpm run deploy:cf
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -80,11 +92,7 @@ jobs:
   deploy_deno:
     needs: validate
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' || github.event.inputs.target == 'all' || github.event.inputs.target == 'deno') &&
-      secrets.DENO_DEPLOY_TOKEN != '' &&
-      secrets.DENO_DEPLOY_ORG != '' &&
-      secrets.DENO_DEPLOY_APP != ''
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'deno' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +113,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check Deno Deploy secrets
+        id: deno_secrets
+        shell: bash
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+          DENO_DEPLOY_ORG: ${{ secrets.DENO_DEPLOY_ORG }}
+          DENO_DEPLOY_APP: ${{ secrets.DENO_DEPLOY_APP }}
+        run: |
+          if [[ -n "${DENO_DEPLOY_TOKEN}" && -n "${DENO_DEPLOY_ORG}" && -n "${DENO_DEPLOY_APP}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "Deno Deploy secrets are not configured; skipping deployment."
+          fi
+
       - name: Deploy to Deno Deploy
+        if: steps.deno_secrets.outputs.available == 'true'
         run: |
           pnpm run build
           deno deploy --config deno.json --token "${DENO_DEPLOY_TOKEN}" --org "${DENO_DEPLOY_ORG}" --app "${DENO_DEPLOY_APP}" --prod .

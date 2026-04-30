@@ -19,6 +19,39 @@ describe('determinePreviewKind', () => {
     ).toBe('text');
   });
 
+  it('prefers text for typescript files even when the server labels them as mpeg-ts video', () => {
+    expect(
+      determinePreviewKind({
+        fileName: 'demo.ts',
+        fileExtension: 'ts',
+        contentType: 'video/mp2t',
+        sampleBytes: textSample
+      })
+    ).toBe('text');
+  });
+
+  it('prefers text for typescript files even when the server labels them as audio', () => {
+    expect(
+      determinePreviewKind({
+        fileName: 'demo.ts',
+        fileExtension: 'ts',
+        contentType: 'audio/mpeg',
+        sampleBytes: textSample
+      })
+    ).toBe('text');
+  });
+
+  it('keeps binary transport stream files in the video renderer', () => {
+    expect(
+      determinePreviewKind({
+        fileName: 'segment.ts',
+        fileExtension: 'ts',
+        contentType: 'video/mp2t',
+        sampleBytes: binarySample
+      })
+    ).toBe('video');
+  });
+
   it('routes legacy office documents to native fallback lane', () => {
     expect(
       determinePreviewKind({

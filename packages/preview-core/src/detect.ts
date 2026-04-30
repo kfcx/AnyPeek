@@ -168,6 +168,12 @@ export function determinePreviewKind(input: PreviewProbeInput): PreviewKind {
   const contentType = resolveProbeContentType(input);
   const extension = resolveProbeExtension(input, contentType);
   const sniffedMime = normalizeContentType(input.sniffedMime);
+  const textLikeByExtension =
+    JSON_EXTENSIONS.has(extension) ||
+    DELIMITED_TEXT_EXTENSIONS.has(extension) ||
+    MARKDOWN_EXTENSIONS.has(extension) ||
+    HTML_EXTENSIONS.has(extension) ||
+    TEXT_EXTENSIONS.has(extension);
   const looksLikeZipContainer = sniffedMime === 'application/zip';
   const looksLikeCompoundBinary = sniffedMime === 'application/x-cfb';
   const prefersDocx = DOCX_CONTENT_TYPES.has(contentType) || extension === 'docx';
@@ -184,6 +190,12 @@ export function determinePreviewKind(input: PreviewProbeInput): PreviewKind {
 
   if (contentType.startsWith('image/') || IMAGE_EXTENSIONS.has(extension)) {
     return 'image';
+  }
+
+  // Some servers label text resources such as `.ts` as MPEG transport streams via `video/mp2t`.
+  // When the extension is text-like and the sampled bytes decode cleanly, prefer the text lanes.
+  if (textLikeByExtension && isLikelyText(input.sampleBytes) && (contentType.startsWith('audio/') || contentType.startsWith('video/'))) {
+    return JSON_EXTENSIONS.has(extension) ? 'json' : 'text';
   }
 
   if (contentType.startsWith('audio/') || AUDIO_EXTENSIONS.has(extension)) {
