@@ -16,6 +16,7 @@ import { EmptyState } from './components/EmptyState';
 import { MetadataBar } from './components/MetadataBar';
 import { PreviewPane } from './components/PreviewPane';
 import { Toolbar } from './components/Toolbar';
+import { WindowRail } from './components/WindowRail';
 import { usePreviewWorkbench } from './hooks/usePreviewWorkbench';
 import { listenTauriWindowFocusChanged } from './platform/tauri';
 
@@ -57,6 +58,7 @@ export default function App() {
   const workbench = usePreviewWorkbench();
   const [dragDepth, setDragDepth] = useState(0);
   const [toolbarVisible, setToolbarVisible] = useState(true);
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const focusFrameRef = useRef<number | null>(null);
@@ -69,7 +71,7 @@ export default function App() {
     [workbench.resource]
   );
   const hasPreview = Boolean(workbench.resource && activeRenderer);
-  const showCenteredEmptyState = !hasPreview && !workbench.error;
+  const showCenteredEmptyState = !hasPreview;
   const markToolbarForRestore = useEffectEvent(() => {
     shouldRestoreToolbarOnActivateRef.current = true;
   });
@@ -190,85 +192,94 @@ export default function App() {
       <div className="backdrop" />
 
       <main className="shell-layout">
-        <Toolbar
-          visible={toolbarVisible}
-          inputValue={workbench.inputValue}
-          busy={workbench.busy}
-          downloadTarget={workbench.downloadTarget}
-          urlInputRef={urlInputRef}
-          onHide={() => setToolbarVisible(false)}
-          onInputChange={workbench.setInputValue}
-          onSubmit={() => void workbench.previewRemote()}
-          onPickLocalFile={(file) => void workbench.previewLocal(file)}
-        />
+        <div className={`workbench-layout ${railCollapsed ? 'is-rail-collapsed' : ''}`}>
+          <WindowRail
+            windows={workbench.windows}
+            activeWindowId={workbench.activeWindowId}
+            history={workbench.history}
+            collapsed={railCollapsed}
+            onToggleCollapsed={() => setRailCollapsed((current) => !current)}
+            onCreateWindow={() => {
+              workbench.createWindow();
+              setToolbarVisible(true);
+            }}
+            onSelectWindow={workbench.selectWindow}
+            onCloseWindow={workbench.closeWindow}
+            onOpenHistory={(entry) => void workbench.openHistoryEntry(entry)}
+            onRemoveHistoryEntry={workbench.removeHistoryEntry}
+            onClearHistory={workbench.clearHistory}
+          />
 
-        <button
-          type="button"
-          className="toolbar-reveal"
-          aria-label="显示工具栏"
-          title="显示工具栏（双击 Ctrl）"
-          onPointerEnter={() => setToolbarVisible(true)}
-          onClick={() => setToolbarVisible(true)}
-        >
-          <ShowToolbarIcon className="toolbar-icon" />
-        </button>
+          <section
+            className={`workspace panel ${showCenteredEmptyState ? 'is-empty-only' : ''}`}
+            onDragEnter={(event) => {
+              if (!hasFiles(event)) {
+                return;
+              }
+              event.preventDefault();
+              setDragDepth((value) => value + 1);
+            }}
+            onDragOver={(event) => {
+              if (!hasFiles(event)) {
+                return;
+              }
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }}
+            onDragLeave={(event) => {
+              if (!hasFiles(event)) {
+                return;
+              }
+              event.preventDefault();
+              setDragDepth((value) => Math.max(0, value - 1));
+            }}
+            onDrop={(event) => {
+              if (!hasFiles(event)) {
+                return;
+              }
+              event.preventDefault();
+              setDragDepth(0);
+              const file = event.dataTransfer.files?.[0];
+              if (file) {
+                void workbench.previewLocal(file);
+              }
+            }}
+          >
+            <Toolbar
+              visible={toolbarVisible}
+              inputValue={workbench.inputValue}
+              busy={workbench.busy}
+              downloadTarget={workbench.downloadTarget}
+              urlInputRef={urlInputRef}
+              onHide={() => setToolbarVisible(false)}
+              onInputChange={workbench.setInputValue}
+              onSubmit={() => void workbench.previewRemote()}
+              onPickLocalFile={(file) => void workbench.previewLocal(file)}
+            />
 
-        <section
-          className={`workspace panel ${showCenteredEmptyState ? 'is-empty-only' : ''}`}
-          onDragEnter={(event) => {
-            if (!hasFiles(event)) {
-              return;
-            }
-            event.preventDefault();
-            setDragDepth((value) => value + 1);
-          }}
-          onDragOver={(event) => {
-            if (!hasFiles(event)) {
-              return;
-            }
-            event.preventDefault();
-            event.dataTransfer.dropEffect = 'copy';
-          }}
-          onDragLeave={(event) => {
-            if (!hasFiles(event)) {
-              return;
-            }
-            event.preventDefault();
-            setDragDepth((value) => Math.max(0, value - 1));
-          }}
-          onDrop={(event) => {
-            if (!hasFiles(event)) {
-              return;
-            }
-            event.preventDefault();
-            setDragDepth(0);
-            const file = event.dataTransfer.files?.[0];
-            if (file) {
-              void workbench.previewLocal(file);
-            }
-          }}
-        >
-          {dragDepth > 0 ? <div className="drop-overlay">松手即可打开本地文件</div> : null}
+            <button
+              type="button"
+              className="toolbar-reveal"
+              aria-label="显示工具栏"
+              title="显示工具栏（双击 Ctrl）"
+              onPointerEnter={() => setToolbarVisible(true)}
+              onClick={() => setToolbarVisible(true)}
+            >
+              <ShowToolbarIcon className="toolbar-icon" />
+            </button>
 
-          {workbench.error ? (
-            <div className="global-error" role="alert">
-              <strong>请求失败</strong>
-              <p>{workbench.error}</p>
-              <button type="button" className="link-button compact" onClick={workbench.clearError}>
-                收起
-              </button>
-            </div>
-          ) : null}
+            {dragDepth > 0 ? <div className="drop-overlay">松手即可打开本地文件</div> : null}
 
-          {hasPreview ? (
-            <>
-              <MetadataBar resource={workbench.resource!} />
-              <PreviewPane resource={workbench.resource!} />
-            </>
-          ) : (
-            <EmptyState />
-          )}
-        </section>
+            {hasPreview ? (
+              <>
+                <MetadataBar resource={workbench.resource!} />
+                <PreviewPane resource={workbench.resource!} />
+              </>
+            ) : (
+              <EmptyState />
+            )}
+          </section>
+        </div>
       </main>
     </div>
   );
